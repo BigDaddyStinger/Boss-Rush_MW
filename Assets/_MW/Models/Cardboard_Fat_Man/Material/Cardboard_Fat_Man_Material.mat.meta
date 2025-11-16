@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: b4de56dba3f1c504baff80db2136fd9d
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 2100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 231760
+  packageName: Cardboard Fat Man
+  packageVersion: 1.0
+  assetPath: Assets/Cardboard_Fat_Man/Material/Cardboard_Fat_Man_Material.mat
+  uploadId: 525277
