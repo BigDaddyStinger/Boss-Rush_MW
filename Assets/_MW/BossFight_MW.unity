@@ -2413,6 +2413,7 @@ GameObject:
   - component: {fileID: 2080586976}
   - component: {fileID: 2080586975}
   - component: {fileID: 2080586974}
+  - component: {fileID: 2080586977}
   m_Layer: 0
   m_Name: BossCapsule
   m_TagString: Untagged
@@ -2512,6 +2513,59 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2080586972}
   m_Mesh: {fileID: 10208, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!114 &2080586977
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2080586972}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1e9a6ed81efa9df4fa5ccc6948527c69, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _player: {fileID: 0}
+  _damageable: {fileID: 0}
+  _anim: {fileID: 0}
+  _agent: {fileID: 0}
+  phase2Threshold: 0.66
+  phase3Threshold: 0.33
+  bossGrounded: 0
+  bossSpeed: 0
+  phase1Speed: 3.5
+  phase2Speed: 4.5
+  phase3Speed: 6
+  meleeRange: 4
+  normalSwingDuration: 1
+  kickDuration: 0.8
+  slamDuration: 1.4
+  spinDuration: 2.5
+  shootDuration: 0.9
+  fastComboDuration: 1.4
+  swingComboDuration: 0.9
+  combo2Duration: 0.9
+  bigHitFractionForDefense: 0.2
+  defensiveRange: 3
+  defensiveCooldown: 5
+  stapleProjectilePrefab: {fileID: 0}
+  stapleMuzzle: {fileID: 0}
+  acknowledgeDistance: 30
+  longProjectileRange: 25
+  shortProjectileRange: 15
+  hailstormWindup: 0.8
+  hailstormInterval: 0.15
+  hailstormShotCount: 6
+  hailstormSpreadAngle: 20
+  shockwavePrefab: {fileID: 0}
+  shockwaveSpawnPoint: {fileID: 0}
+  bossDead: 0
+  phase1AtkCooldown: 1.5
+  phase2AtkCooldown: 1.2
+  phase3AtkCooldown: 0.9
+  playerDead: 0
+  playerDistance: 0
+  drawDebugGizmos: 0
 --- !u!1 &2085495277
 GameObject:
   m_ObjectHideFlags: 0
