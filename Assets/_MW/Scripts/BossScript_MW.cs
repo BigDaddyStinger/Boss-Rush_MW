@@ -1,8 +1,11 @@
 using System.Collections;
 using System.IO;
+using Cinemachine;
 using UnityEditor.Build;
 using UnityEngine;
 using UnityEngine.AI;
+using UnityEngine.Rendering.Universal;
+using UnityEngine.UI;
 
 namespace WalshScripts
 {
@@ -13,10 +16,11 @@ namespace WalshScripts
         //Bool / Float Parameters
         static readonly int HashPlayerDetected = Animator.StringToHash("PlayerDetected");
         static readonly int HashBossGrounded = Animator.StringToHash("BossGrounded");
-        static readonly int HashBossAttack = Animator.StringToHash("BossAttack");
+        static readonly int HashBossAttack = Animator.StringToHash("BossAttacking");
         static readonly int HashBossDied = Animator.StringToHash("BossDied");
+        static readonly int HashPlayerDead = Animator.StringToHash("PlayerDead");
         static readonly int HashPlayerDistance = Animator.StringToHash("PlayerDistance");
-        static readonly int HashBossMove = Animator.StringToHash("BossMove");
+        static readonly int HashBossMove = Animator.StringToHash("BossMoveSpeed");
 
         //Trigger Parameters
         static readonly int HashNormalSwing = Animator.StringToHash("NormalSwing");
@@ -25,8 +29,8 @@ namespace WalshScripts
         static readonly int HashShoot = Animator.StringToHash("Shoot");
         static readonly int HashSlamAttack = Animator.StringToHash("SlamAttack");
         static readonly int HashFastCombo = Animator.StringToHash("FastCombo");
-        static readonly int HashSwingCombo = Animator.StringToHash("SwingCombo");
-        static readonly int HashCombo2 = Animator.StringToHash("Combo2");
+        static readonly int HashSwingCombo = Animator.StringToHash("SwingCombo1");
+        static readonly int HashCombo2 = Animator.StringToHash("SwingCombo2");
 
         #endregion
 
@@ -38,6 +42,7 @@ namespace WalshScripts
         [SerializeField] Damageable _damageable;
         [SerializeField] Animator _anim;
         [SerializeField] NavMeshAgent _agent;
+        [SerializeField] Animator screenFade;
 
         [Header("Boss Health Threshold")]
         [Range(0.1f, 0.99f)]
@@ -54,6 +59,7 @@ namespace WalshScripts
 
         [Header("Boss Melee Variables")]
         [SerializeField] float meleeRange = 4f;
+        [SerializeField] float meleePursuitRange = 20f;
         [SerializeField] float normalSwingDuration = 1.0f;
         [SerializeField] float kickDuration = 0.8f;
         [SerializeField] float slamDuration = 1.4f;
@@ -71,6 +77,8 @@ namespace WalshScripts
         [Header("Boss Projectile Variables")]
         [SerializeField] GameObject stapleProjectilePrefab;
         [SerializeField] Transform stapleMuzzle;
+        [SerializeField] Vector3 gravity = new Vector3(0f, -9.81f, 0f);
+        [SerializeField] float projectileSpeed = 30f;
         [SerializeField] float acknowledgeDistance = 30f;
         [SerializeField] float longProjectileRange = 25f;
         [SerializeField] float shortProjectileRange = 15f;
@@ -88,6 +96,7 @@ namespace WalshScripts
         [SerializeField] float phase1AtkCooldown = 1.5f;
         [SerializeField] float phase2AtkCooldown = 1.2f;
         [SerializeField] float phase3AtkCooldown = 0.9f;
+        [SerializeField] Image bossHealthBar;
 
         [Header("Player Variables")]
         [SerializeField] bool playerDead;
@@ -95,6 +104,7 @@ namespace WalshScripts
 
         [Header("Debug")]
         [SerializeField] bool drawDebugGizmos;
+        [SerializeField] GameObject _MeleeDamageSphere;
 
         #endregion
 
@@ -106,9 +116,10 @@ namespace WalshScripts
         bool _hasSpottedPlayer;
         bool _isAttacking;
         bool _grounded = true;
+        bool _lastShotLongRange;
 
         int _maxHealth;
-        int _currentHealth;
+        [SerializeField] int _currentHealth;
 
         float _atkTimer;
         float _lastDefenseTime = -999f;
@@ -145,8 +156,15 @@ namespace WalshScripts
             if (_damageable != null)
             {
                 _damageable.OnInitialize.AddListener(OnHealthInit);
+
                 _damageable.OnHealthChanged.AddListener(OnHealthChanged);
+
                 _damageable.OnDeath.AddListener(OnDeath);
+            }
+
+            if (_MeleeDamageSphere == null)
+            {
+                _MeleeDamageSphere = transform.Find("MeleeDamageSphere")?.gameObject;
             }
         }
 
@@ -168,11 +186,22 @@ namespace WalshScripts
             }
 
             _state.Tick();
+
             UpdateAnimatorParameters();
 
             if (!(_state is DeadState))
             {
                 EvaluatePhaseSwitch();
+            }
+        }
+
+        void FixedUpdate()
+        {
+            bossHealthBar.fillAmount = NormalizedHealth;
+
+            if (_currentHealth <= 0)
+            {
+                OnDeath();
             }
         }
 
@@ -188,6 +217,9 @@ namespace WalshScripts
 
             Gizmos.color = Color.red;
             Gizmos.DrawWireSphere(transform.position, meleeRange);
+
+            Gizmos.color = Color.green;
+            Gizmos.DrawWireSphere(transform.position, meleePursuitRange);
 
             Gizmos.color = Color.cyan;
             Gizmos.DrawWireSphere(transform.position, shortProjectileRange);
@@ -207,6 +239,7 @@ namespace WalshScripts
         void OnHealthInit(int max)
         {
             _maxHealth = max;
+
             _currentHealth = max;
         }
 
@@ -220,24 +253,61 @@ namespace WalshScripts
             }
 
             bool bigHit = _maxHealth > 0 && damageAmount >= Mathf.CeilToInt(_maxHealth * bigHitFractionForDefense);
+
             bool playerClose = DistanceToPlayer() <= defensiveRange;
 
             if (Time.time - _lastDefenseTime > defensiveCooldown && (bigHit || playerClose) && !(_state is DefensiveState) && !(_state is DeadState))
             {
                 _lastDefenseTime = Time.time;
+
                 SwitchState(new DefensiveState(this));
             }
         }
 
-        void OnDeath()
+        public void OnDeath()
         {
             SwitchState(new DeadState(this));
+
+            Debug.Log("Boss has died. Screen Fade Started");
+
+            screenFade.SetTrigger("fade to black");
+
+            Debug.Log("Boss has died.  Waiting 4 seconds to load next level.");
+
+            StartCoroutine(FourSecondTimer());
+
+            Debug.Log("Boss has died.  Loading next level.");
 
             if (GameManager.instance != null)
             {
                 GameManager.instance.GoToNextLevel();
             }
         }
+
+        IEnumerator OneSecondTimer()
+        {
+            yield return new WaitForSeconds(1f);
+        }
+
+        IEnumerator TwoSecondTimer()
+        {
+            yield return new WaitForSeconds(2f);
+        }
+
+        IEnumerator ThreeSecondTimer()
+        {
+            yield return new WaitForSeconds(3f);
+        }
+
+        IEnumerator FourSecondTimer()
+        {
+            yield return new WaitForSeconds(4f);
+        }
+
+        IEnumerator FiveSecondTimer()
+        {
+            yield return new WaitForSeconds(5f);
+        }   
 
         float NormalizedHealth
         {
@@ -305,7 +375,9 @@ namespace WalshScripts
             _anim.SetFloat(HashBossMove, moveSpeed);
 
             _anim.SetBool(HashPlayerDetected, _hasSpottedPlayer);
+
             _anim.SetBool(HashBossGrounded, _grounded);
+
             _anim.SetBool(HashBossAttack, _isAttacking);
         }
 
@@ -324,6 +396,7 @@ namespace WalshScripts
         #region Movement & Helpers
 
         public bool HasPlayer => _player != null;
+
         public Vector3 PlayerPosition => HasPlayer ? _player.transform.position : transform.position;
 
         public float DistanceToPlayer()
@@ -349,6 +422,7 @@ namespace WalshScripts
             }
 
             Vector3 dir = PlayerPosition - transform.position;
+
             dir.y = 0f;
 
             if (dir.sqrMagnitude < 0.001f)
@@ -396,6 +470,37 @@ namespace WalshScripts
             _agent.ResetPath();
         }
 
+        float? CalculateTrajectory(Vector3 target, float speed, bool useLow)
+        {
+            Vector3 targetDir = target - stapleMuzzle.position;
+
+            float y = targetDir.y;
+            targetDir.y = 0f;
+
+            float x = targetDir.magnitude;
+
+            float v = speed;
+            float v2 = Mathf.Pow(v, 2);
+            float v4 = Mathf.Pow(v, 4);
+            float g = Mathf.Abs(gravity.y);
+            float x2 = Mathf.Pow(x, 2);
+
+            float underRoot = v4 - g * ((g * x2) + (2 * y * v2));
+
+            if (underRoot >= 0)
+            {
+                float root = Mathf.Sqrt(underRoot);
+                float highAngle = v2 + root;
+                float lowAngle = v2 - root;
+
+                float angleRad = useLow ? Mathf.Atan2(lowAngle, g * x) : Mathf.Atan2(highAngle, g * x);
+
+                return angleRad * Mathf.Rad2Deg;
+            }
+            else
+                return null;
+        }
+
         public void BeginAttack(IEnumerator routine, float phaseCooldown)
         {
             if (_isAttacking || routine == null)
@@ -409,6 +514,25 @@ namespace WalshScripts
 
             _attackRoutine = StartCoroutine(AttackWrapper(routine, phaseCooldown));
         }
+
+        public void EnableMeleeHitbox()
+        {
+            if(_MeleeDamageSphere != null)
+            {
+                _MeleeDamageSphere.SetActive(true);
+            }
+        }
+
+        public void DisableMeleeHitbox()
+        {
+            if (_MeleeDamageSphere != null)
+            {
+                _MeleeDamageSphere.SetActive(false);
+            }
+        }
+
+
+
 
         IEnumerator AttackWrapper(IEnumerator routine, float phaseCooldown)
         {
@@ -431,6 +555,7 @@ namespace WalshScripts
             if(_attackRoutine != null)
             {
                 StopCoroutine(_attackRoutine);
+
                 _attackRoutine = null;
             }
 
@@ -452,6 +577,8 @@ namespace WalshScripts
 
         public IEnumerator NormalSwingRoutine()
         {
+            Debug.Log("Boss Attack: NormalSwing");
+            
             LookAtPlayer();
 
             Trigger(HashNormalSwing);
@@ -461,13 +588,19 @@ namespace WalshScripts
 
         public IEnumerator KickRoutine()
         {
+            Debug.Log("Boss Attack: Kick");
+
             LookAtPlayer();
+
             Trigger(HashKick);
+
             yield return new WaitForSeconds(kickDuration);
         }
 
         public IEnumerator SlamRoutine()
         {
+            Debug.Log("Boss Attack: SlamAttack");
+
             LookAtPlayer();
 
             Trigger(HashSlamAttack);
@@ -488,6 +621,8 @@ namespace WalshScripts
 
         public IEnumerator SpinRoutine()
         {
+            Debug.Log("Boss Attack: SpinSwing");
+
             LookAtPlayer();
 
             Trigger(HashSpinSwing);
@@ -510,46 +645,85 @@ namespace WalshScripts
 
         public IEnumerator ShootRoutine(bool longRange)
         {
+            Debug.Log("Boss Attack: Shoot");
+
             LookAtPlayer();
+
+            _lastShotLongRange = longRange;
 
             Trigger(HashShoot);
 
-            float half = shootDuration * 0.5f;
+            yield return new WaitForSeconds(shootDuration);
+        }
 
-            yield return new WaitForSeconds(half);
-
-            if (stapleProjectilePrefab != null && stapleMuzzle != null)
+        public void InstantiateProjectile()
+        {
+            if (stapleProjectilePrefab == null || stapleMuzzle == null)
             {
-                Vector3 dir = PlayerPosition - stapleMuzzle.position;
+                Debug.LogWarning("Boss Shoot: Missing Projectile Prefab or Muzzle.");
 
-                dir.y = 0f;
-
-                if (dir.sqrMagnitude < 0.01f)
-                {
-                    dir = transform.forward;
-                }
-
-                Quaternion rotation = Quaternion.LookRotation(dir.normalized);
-
-                GameObject proj = Instantiate(stapleProjectilePrefab, stapleMuzzle.position, rotation);
-
-                var rb = proj.GetComponent<Rigidbody>();
-
-                if (rb != null)
-                {
-                    float speed = longRange ? 35f : 25f;
-
-                    rb.linearVelocity = rotation * Vector3.forward * speed;
-                }
+                return;
             }
 
-            float remaining = Mathf.Max(0f, shootDuration - half);
+            Vector3 toTarget = PlayerPosition - stapleMuzzle.position;
 
-            yield return new WaitForSeconds(remaining);
+            float speed = _lastShotLongRange ? 35f : 25f;
+
+            float? angleDeg = CalculateTrajectory(PlayerPosition, speed, useLow: true);
+
+            Vector3 initialVelocity;
+
+            if (angleDeg.HasValue)
+            {
+                float angleRad = angleDeg.Value * Mathf.Deg2Rad;
+
+                Vector3 toTargetXZ = toTarget;
+
+                toTargetXZ.y = 0f;
+
+                if (toTargetXZ.sqrMagnitude < 0.01f)
+                {
+                    toTargetXZ = transform.forward;
+                }
+
+                Vector3 planarDir = toTargetXZ.normalized;
+
+                float vHoriz = speed * Mathf.Cos(angleRad);
+
+                float vVert = speed * Mathf.Sin(angleRad);
+
+                initialVelocity = planarDir * vHoriz;
+
+                initialVelocity.y = vVert;
+            }
+            else
+            {
+                Debug.LogWarning("Boss InstantiateProjectile: Missing Arc Solution. Using straight shot.");
+
+                Vector3 dir = toTarget.sqrMagnitude > 0.001f
+
+                    ? toTarget.normalized
+
+                    : transform.forward;
+
+                initialVelocity = dir * speed;
+            }
+
+            GameObject proj = Instantiate(stapleProjectilePrefab, stapleMuzzle.position, Quaternion.LookRotation(initialVelocity.normalized));
+
+            var rb = proj.GetComponent<Rigidbody>();
+
+            if (rb != null)
+            {
+                rb.useGravity = true;
+
+                rb.linearVelocity = initialVelocity;
+            }
         }
 
         public IEnumerator FastComboRoutine()
         {
+            Debug.Log("Boss Attack: FastCombo");
             LookAtPlayer();
 
             Trigger(HashFastCombo);
@@ -559,6 +733,8 @@ namespace WalshScripts
 
         public IEnumerator ComboChainRoutine()
         {
+            Debug.Log("Boss Attack: ComboChain");
+
             LookAtPlayer();
 
             Trigger(HashSwingCombo);
@@ -574,6 +750,8 @@ namespace WalshScripts
 
         IEnumerator HailstormStapleRoutine()
         {
+            Debug.Log("Boss Attack: HailstormStaple");
+
             LookAtPlayer();
 
             Trigger(HashShoot);
@@ -587,36 +765,60 @@ namespace WalshScripts
                 yield break;
             }
 
-            Vector3 baseDir = PlayerPosition - stapleMuzzle.position;
+            Vector3 toTarget = PlayerPosition - stapleMuzzle.position;
 
-            baseDir.y = 0f;
+            float speed = projectileSpeed > 0f ? projectileSpeed : 30f;
 
-            if (baseDir.sqrMagnitude < 0.01f)
+            float? angleDeg = CalculateTrajectory(PlayerPosition, speed, useLow: false);
+
+            if(!angleDeg.HasValue)
             {
-                baseDir = transform.forward;
+                Debug.LogWarning("Boss HailstormStapleRoutine: Missing Arc Solution.");
+                yield return ShootRoutine(true);
+                yield break;
             }
 
-            Quaternion baseRot = Quaternion.LookRotation(baseDir.normalized);
+            float angleRad = angleDeg.Value * Mathf.Deg2Rad;
+
+            Vector3 toTargetXZ = toTarget;
+
+            toTargetXZ.y = 0f;
+
+            if (toTargetXZ.sqrMagnitude < 0.01f)
+            {
+                toTargetXZ = transform.forward;
+            }
+
+            Vector3 basePlanarDir = toTargetXZ.normalized;
+
+            float vHoriz = speed * Mathf.Cos(angleRad);
+
+            float vVert = speed * Mathf.Sin(angleRad);
 
             int count = Mathf.Max(1, hailstormShotCount);
 
-            for (int i = 0; i < count; i++)
+            for(int i = 0; i < count; i++)
             {
                 float t = (count == 1) ? 0.5f : (float)i / (count - 1);
 
-                float angle = Mathf.Lerp(-hailstormSpreadAngle, hailstormSpreadAngle, t);
+                float yawOffset = Mathf.Lerp(-hailstormSpreadAngle, hailstormSpreadAngle, t);
 
-                Quaternion rot = baseRot * Quaternion.Euler(0f, angle, 0f);
+                Quaternion yawRot = Quaternion.AngleAxis(yawOffset, Vector3.up);
 
-                GameObject proj = Instantiate(stapleProjectilePrefab, stapleMuzzle.position, rot);
+                Vector3 spreadPlanarDir = yawRot * basePlanarDir;
+
+                Vector3 initialVelocity = spreadPlanarDir * vHoriz;
+
+                initialVelocity.y = vVert;
+
+                GameObject proj = Instantiate(stapleProjectilePrefab, stapleMuzzle.position, Quaternion.LookRotation(initialVelocity.normalized));
 
                 var rb = proj.GetComponent<Rigidbody>();
 
-                if (rb != null)
+                if(rb != null)
                 {
-                    float speed = 32f;
-
-                    rb.linearVelocity = rot * Vector3.forward * speed;
+                    rb.useGravity = true;
+                    rb.linearVelocity = initialVelocity;
                 }
 
                 yield return new WaitForSeconds(hailstormInterval);
@@ -627,8 +829,12 @@ namespace WalshScripts
 
         public IEnumerator DefensiveBraceRoutine()
         {
+            Debug.Log("Boss Attack: DefensiveBrace");
+
             LookAtPlayer();
+
             Trigger(HashKick);
+
             yield return new WaitForSeconds(kickDuration * 0.5f);
 
             yield return SlamRoutine();
@@ -654,7 +860,7 @@ namespace WalshScripts
 
             public override void Enter()
             {
-                boss.StopMoving();
+                //boss.StopMoving();
             }
 
             public override void Tick()
@@ -680,6 +886,7 @@ namespace WalshScripts
             public override void Enter()
             {
                 boss.SetMoveSpeed(boss.phase1Speed);
+
                 boss._atkTimer = 0.5f;
             }
 
@@ -703,7 +910,7 @@ namespace WalshScripts
                 }
                 else
                 {
-                    boss.StopMoving();
+                    //boss.StopMoving();
                 }
 
                 boss.LookAtPlayer();
@@ -730,7 +937,7 @@ namespace WalshScripts
                 {
                     boss.BeginAttack(boss.NormalSwingRoutine(), boss.phase1AtkCooldown);
                 }
-                else if (dist <= boss.shortProjectileRange)
+                else if (dist > boss.meleePursuitRange && dist <= boss.shortProjectileRange)
                 {
                     boss.BeginAttack(boss.ShootRoutine(false), boss.phase1AtkCooldown);
                 }
@@ -742,7 +949,7 @@ namespace WalshScripts
 
             public override void Exit()
             {
-                boss.StopMoving();
+                //boss.StopMoving();
             }
         }
 
@@ -776,7 +983,7 @@ namespace WalshScripts
                 }
                 else
                 {
-                    boss.StopMoving();
+                    //boss.StopMoving();
                 }
 
                 boss.LookAtPlayer();
@@ -815,7 +1022,7 @@ namespace WalshScripts
 
             public override void Exit()
             {
-                boss.StopMoving();
+                //boss.StopMoving();
             }
         }
 
@@ -849,7 +1056,7 @@ namespace WalshScripts
                 }
                 else
                 {
-                    boss.StopMoving();
+                    //boss.StopMoving();
                 }
 
                 boss.LookAtPlayer();
@@ -896,7 +1103,7 @@ namespace WalshScripts
 
             public override void Exit()
             {
-                boss.StopMoving();
+                //boss.StopMoving();
             }
         }
 
@@ -906,7 +1113,7 @@ namespace WalshScripts
 
             public override void Enter()
             {
-                boss.StopMoving();
+                //boss.StopMoving();
                 boss.BeginAttack(boss.DefensiveBraceRoutine(), boss.phase2AtkCooldown);
             }
 
@@ -920,7 +1127,7 @@ namespace WalshScripts
 
             public override void Exit()
             {
-                boss.StopMoving();
+                //boss.StopMoving();
             }
         }
 
@@ -930,7 +1137,7 @@ namespace WalshScripts
 
             public override void Enter()
             {
-                boss.StopMoving();
+                //boss.StopMoving();
             }
         }
 

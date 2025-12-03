@@ -39,6 +39,8 @@ public class Damageable : MonoBehaviour
 
     public bool Hit(Damage damage)
     {
+        Debug.Log($"{gameObject.name} was hit for {damage.amount} damage."); // Debug log for testing because boss and player are not hitting eachother.
+
         if (timeSinceHit < iTime)
             return false;
 
