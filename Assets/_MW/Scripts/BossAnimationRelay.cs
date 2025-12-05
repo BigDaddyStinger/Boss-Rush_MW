@@ -14,6 +14,8 @@ namespace WalshScripts
 
         public void EnableMeleeHitbox() => _boss?.EnableMeleeHitbox();
         public void DisableMeleeHitbox() => _boss?.DisableMeleeHitbox();
+        public void EnableShockwaveHitbox() => _boss?.EnableShockwaveHitbox();
+        public void DisableShockwaveHitbox() => _boss?.DisableShockwaveHitbox();
         public void InstantiateProjectile() => _boss?.InstantiateProjectile();
     }
 }

@@ -43,6 +43,7 @@ namespace WalshScripts
         [SerializeField] Animator _anim;
         [SerializeField] NavMeshAgent _agent;
         [SerializeField] Animator screenFade;
+        [SerializeField] BossPhaseVisuals phaseVisuals;
 
         [Header("Boss Health Threshold")]
         [Range(0.1f, 0.99f)]
@@ -86,6 +87,8 @@ namespace WalshScripts
         [SerializeField] float hailstormInterval = 0.15f;
         [SerializeField] int hailstormShotCount = 6;
         [SerializeField] float hailstormSpreadAngle = 20f;
+        [SerializeField] ParticleSystem throwWindUp;
+        [SerializeField] GameObject _weapon;
 
         [Header("Boss Shockwave Attack")]
         [SerializeField] GameObject shockwavePrefab;
@@ -117,6 +120,7 @@ namespace WalshScripts
         bool _isAttacking;
         bool _grounded = true;
         bool _lastShotLongRange;
+        bool _bossDied;
 
         int _maxHealth;
         [SerializeField] int _currentHealth;
@@ -203,6 +207,8 @@ namespace WalshScripts
             {
                 OnDeath();
             }
+
+            Trigger(HashBossDied);
         }
 
         void OnDrawGizmosSelected()
@@ -267,6 +273,8 @@ namespace WalshScripts
         public void OnDeath()
         {
             SwitchState(new DeadState(this));
+
+            _bossDied = true;
 
             Debug.Log("Boss has died. Screen Fade Started");
 
@@ -379,6 +387,8 @@ namespace WalshScripts
             _anim.SetBool(HashBossGrounded, _grounded);
 
             _anim.SetBool(HashBossAttack, _isAttacking);
+
+            _anim.SetBool(HashBossDied, _bossDied);
         }
 
         void Trigger(int hash)
@@ -515,6 +525,22 @@ namespace WalshScripts
             _attackRoutine = StartCoroutine(AttackWrapper(routine, phaseCooldown));
         }
 
+        public void DisableWeapon()
+        {
+            if (_weapon != null)
+            {
+                _weapon.SetActive(false);
+            }
+        }
+
+        public void EnableWeapon()
+        {
+            if (_weapon != null)
+            {
+                _weapon.SetActive(true);
+            }
+        }
+
         public void EnableMeleeHitbox()
         {
             if(_MeleeDamageSphere != null)
@@ -531,7 +557,21 @@ namespace WalshScripts
             }
         }
 
+        public void EnableShockwaveHitbox()
+        {
+            if(shockwavePrefab != null)
+            {
+                shockwavePrefab.SetActive(true);
+            }
+        }
 
+        public void DisableShockwaveHitbox()
+        {
+            if (shockwavePrefab != null)
+            {
+                shockwavePrefab.SetActive(false);
+            }
+        }
 
 
         IEnumerator AttackWrapper(IEnumerator routine, float phaseCooldown)
@@ -617,6 +657,8 @@ namespace WalshScripts
             float remaining = Mathf.Max(0f, slamDuration - half);
 
             yield return new WaitForSeconds(remaining);
+
+            Destroy(shockwavePrefab);
         }
 
         public IEnumerator SpinRoutine()
@@ -651,9 +693,13 @@ namespace WalshScripts
 
             _lastShotLongRange = longRange;
 
+            DisableWeapon();
+
             Trigger(HashShoot);
 
             yield return new WaitForSeconds(shootDuration);
+
+            
         }
 
         public void InstantiateProjectile()
@@ -719,6 +765,8 @@ namespace WalshScripts
 
                 rb.linearVelocity = initialVelocity;
             }
+
+            EnableWeapon();
         }
 
         public IEnumerator FastComboRoutine()
@@ -754,9 +802,21 @@ namespace WalshScripts
 
             LookAtPlayer();
 
+            DisableWeapon();
+
             Trigger(HashShoot);
 
+            if (throwWindUp != null)
+            {
+                throwWindUp.Play();
+            }
+
             yield return new WaitForSeconds(hailstormWindup);
+
+            if (throwWindUp != null)
+            {
+                throwWindUp.Stop();
+            }
 
             if (stapleProjectilePrefab == null || stapleMuzzle == null)
             {
@@ -769,7 +829,7 @@ namespace WalshScripts
 
             float speed = projectileSpeed > 0f ? projectileSpeed : 30f;
 
-            float? angleDeg = CalculateTrajectory(PlayerPosition, speed, useLow: false);
+            float? angleDeg = CalculateTrajectory(PlayerPosition, speed, useLow: true);
 
             if(!angleDeg.HasValue)
             {
@@ -825,6 +885,8 @@ namespace WalshScripts
             }
 
             yield return new WaitForSeconds(0.2f);
+
+            EnableWeapon();
         }
 
         public IEnumerator DefensiveBraceRoutine()
@@ -860,7 +922,7 @@ namespace WalshScripts
 
             public override void Enter()
             {
-                //boss.StopMoving();
+                boss.StopMoving();
             }
 
             public override void Tick()
@@ -885,6 +947,8 @@ namespace WalshScripts
 
             public override void Enter()
             {
+                boss.phaseVisuals.SetPhase1();
+
                 boss.SetMoveSpeed(boss.phase1Speed);
 
                 boss._atkTimer = 0.5f;
@@ -904,13 +968,13 @@ namespace WalshScripts
 
                 float dist = boss.DistanceToPlayer();
 
-                if (dist > boss.meleeRange)
+                if (dist > boss.meleeRange && dist < boss.acknowledgeDistance)
                 {
                     boss.MoveTowardsPlayer();
                 }
                 else
                 {
-                    //boss.StopMoving();
+                    boss.StopMoving();
                 }
 
                 boss.LookAtPlayer();
@@ -949,7 +1013,7 @@ namespace WalshScripts
 
             public override void Exit()
             {
-                //boss.StopMoving();
+                boss.StopMoving();
             }
         }
 
@@ -959,6 +1023,7 @@ namespace WalshScripts
 
             public override void Enter()
             {
+                boss.phaseVisuals.SetPhase2();
                 boss.SetMoveSpeed(boss.phase2Speed);
                 boss._atkTimer = 0.5f;
             }
@@ -1032,6 +1097,7 @@ namespace WalshScripts
 
             public override void Enter()
             {
+                boss.phaseVisuals.SetPhase3();
                 boss.SetMoveSpeed(boss.phase3Speed * 1.25f);
                 boss._atkTimer = 0.25f;
             }
